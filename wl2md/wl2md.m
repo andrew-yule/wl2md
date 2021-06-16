@@ -33,26 +33,46 @@ wl2mdCompile[] := Module[{paclet = CreatePacletArchive[$wl2mdDeveloperPath]}, re
   a new markdown file with the same file name.
 *)
 
-wl2md[nb_NotebookObject] := Module[{cells},
+wl2md[nb_NotebookObject] := Catch[Module[{cells},
   cells = Cells[nb];
   StringRiffle[wl2md /@ cells, "\n"]
-];
+]];
 
-wl2md[file_?StringQ] /; FileExistsQ[file] && FileExtension[file] == "nb" := Module[{notebookObject, markdownText},
+wl2md[file_?StringQ] /; FileExistsQ[file] && FileExtension[file] == "nb" := Catch[Module[{notebookObject, markdownText},
   notebookObject = NotebookOpen[file];
-  markdownText= wl2md[notebookObject];
+  markdownText = wl2md[notebookObject];
   Export[StringReplace[file, ".nb" :> ".md"], markdownText, "Text"]
-];
+]];
+
+wl2md::unrecognized = "The following expression was not able to be parsed by wl2md `1`";
 
 (* Specific support functions for handling various cell types and converting them to markdown text *)
 
 wl2md[cell_CellObject] := wl2md[NotebookRead[cell]];
+
 wl2md[Cell[txt_, "Subsection", ___]] := "# " <> txt;
+
 wl2md[Cell[txt_, "Subsubsection", ___]] := "## " <> txt;
-wl2md[Cell[txt_, "Text", ___]] := txt;
-wl2md[Cell[boxData_, "Input", ___]] := "```\n" <> FrontEndExecute[FrontEnd`ExportPacket[boxData, "InputText"]][[1]] <> "\n```";
-wl2md[Cell[boxData_, "Output", ___]] := "```\n" <> FrontEndExecute[FrontEnd`ExportPacket[boxData, "PlainText"]][[1]] <> "\n```";
+
+wl2md[Cell[txt_?StringQ, "Text", ___]] := txt;
+
+wl2md[Cell[TextData[textData_], "Text", ___]] := exportTextData[textData];
+
+wl2md[Cell[boxData_, "Input", ___]] := "```\n" <> exportBoxData[boxData, "InputText"] <> "\n```";
+
+wl2md[Cell[boxData_, "Output", ___]] := "```\n" <> exportBoxData[boxData, "PlainText"] <> "\n```";
+
+wl2md[expr___] := (Message[wl2md::unrecognized, expr]; Throw[Null]);
+
+(* Helper functions *)
+
+exportTextData[textData_] := StringJoin[textData /. {
+  ButtonBox[txt_, BaseStyle -> "Hyperlink", ___, ButtonNote -> link_, ___] :> "[" <> txt <> "](" <> link <> ")"
+}];
+
+exportBoxData[boxData_, "InputText"] := FrontEndExecute[FrontEnd`ExportPacket[boxData, "InputText"]][[1]];
+exportBoxData[boxData_, "PlainText"] := FrontEndExecute[FrontEnd`ExportPacket[boxData, "PlainText"]][[1]];
 
 End[]; (* `Private` *)
 
-EndPackage[]
+EndPackage[];
